@@ -19,7 +19,7 @@ def load_mnist(N_unlabeled=100, N_test=10000):
     y_rest = np.concatenate([y[1] for y in y_split])
 
     N = 70000
-    N_rest = N - unlabeled * T
+    N_rest = N - N_unlabeled * T
     perm = np.random.permutation(N_rest)
     x_unlabeled, x_test = np.split(x_rest[perm], [N_rest - N_test])
     _, y_test = np.split(y_rest[perm], [N_rest - N_test])

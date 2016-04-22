@@ -25,8 +25,16 @@ np.random.seed(args.seed)
 if args.gpu >= 0:
     cuda.cupy.random.seed(args.seed)
 
+
 D = 784
 T = 10
+
+
+x_train, y_train, x_test, y_test, x_unlabeled = data.load_mnist()
+N_train = len(x_train)
+N_test = len(x_test)
+N_unlabeled = len(x_unlabeled)
+
 
 model = net.ADGM(D, args.a_dim, T, args.z_dim)
 if args.gpu >= 0:
@@ -34,16 +42,15 @@ if args.gpu >= 0:
 xp = cuda.cupy if args.gpu >= 0 else np
 
 
-x_train, y_train, x_test, y_test, x_unlabeled, _ = data.load_mnist()
-N_train = len(x_train)
-N_test = len(x_test)
-N_unlabeled = len(x_unlabeled)
+optimizer = optimizers.Adam()
+optimizer.setup(model)
 
 
 def next_minibatch(batchsize, *xs_data):
-    xs = [xp.asarray(x_data[i: i + batchsize]) for x_data in xs_data]
-    return [chainer.Variable(x) for x in xs]
+    return [xp.asarray(x_data[i: i + batchsize]) for x_data in xs_data]
 
+def to_variable(*xs):
+    return [chainer.Variable(x) for x in xs]
 
 def onehot(y, T):
     ret = xp.zeros((len(y), T), dtype=np.float32)
@@ -53,31 +60,40 @@ def onehot(y, T):
 
 for epoch in six.moves.range(args.epoch):
     model.train = True
-    loss = 0.0
-    for i in six.moves.range(args.batchsize, N_train):
+    loss, accuracy = 0.0, 0.0
+    for i in six.moves.range(0, N_train, args.batchsize):
         x, y = next_minibatch(args.batchsize, x_train, y_train)
-        y = onehot(y, T)
-        optimizer.update(model, x, y)
+        y_onehot = onehot(y, T)
+        xs = to_variable(x, y, y_onehot)
+        optimizer.update(model, *xs)
         loss += model.loss * len(x.data)
+        accuracy += float(model.accuracy(xs[0], xs[1]).data) * len(x.data)
     loss /= N_train
-    print('epoch\t{}\tsupervised loss\t{}'.format(epoch, loss))
+    accuracy /= N_train
+    print('epoch\t{}\tsupervised loss\t{}\taccuracy\t{}'.format(
+            epoch, loss, accuracy))
 
 
     loss = 0.0
-    for i in six.moves.range(args.batchsize, N_unsupervised):
-        x, = next_minibatch(args.batchsize, x_unlabeled)
-        optimizer.update(model, x)
+    for i in six.moves.range(0, N_unlabeled, args.batchsize):
+        xs = next_minibatch(args.batchsize, x_unlabeled)
+        xs = to_variable(*xs)
+        optimizer.update(model, *xs)
         loss += model.loss * len(x.data)
-    loss /= N_unsupervised
+    loss /= N_unlabeled
     print('epoch\t{}\tunsupervised loss\t{}'.format(epoch, loss))
 
 
     model.train = False
-    loss = 0.0
-    for i in six.moves.range(args.batchsize, N_test):
+    loss, accuracy = 0.0, 0.0
+    for i in six.moves.range(0, N_test, args.batchsize):
         x, y = next_minibatch(args.batchsize, x_test, y_test)
-        y = onehot(y, T)
-        loss += model(x, y) * len(x.data)
+        y_onehot = onehot(y, T)
+        xs = to_variable(x, y, y_onehot)
+        loss += float(model(*xs).data) * len(x.data)
+        accuracy += float(model.accuracy(xs[0], xs[1]).data) * len(x.data)
     loss /= N_test
-    print('epoch\t{}\ttest loss\t{}'.format(epoch, loss))
+    accuracy /= N_test
+    print('epoch\t{}\ttest loss\t{}\taccuracy\t{}'.format(
+            epoch, loss, accuracy))
 

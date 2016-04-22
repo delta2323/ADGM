@@ -5,17 +5,20 @@ import numpy as np
 import six
 
 
+def entropy(p):
+    return -F.sum(F.log(p) * p)
+
+
 h_dim = 10
 
 class ADGM(chainer.Chain):
 
-
     def __init__(self, x_dim, a_dim, y_dim, z_dim):
-        q_a_given_x = MLP((x_dim, h_dim, a_dim))
-        q_z_given_a_y_x = MultiMLP((a_dim, y_dim, x_dim), (h_dim, z_dim))
+        q_a_given_x = MLP((x_dim, h_dim, a_dim * 2))
+        q_z_given_a_y_x = MultiMLP((a_dim, y_dim, x_dim), (h_dim, z_dim * 2))
         q_y_given_a_x = MultiMLP((a_dim, x_dim), (h_dim, y_dim))
-        p_a_given_z_y_x = MultiMLP((z_dim, y_dim, x_dim), (h_dim, a_dim))
-        p_x_given_z_y = MultiMLP((z_dim, y_dim), (h_dim, z_dim))
+        p_a_given_z_y_x = MultiMLP((z_dim, y_dim, x_dim), (h_dim, a_dim * 2))
+        p_x_given_z_y = MultiMLP((z_dim, y_dim), (h_dim, x_dim * 2))
         super(ADGM, self).__init__(
             q_a_given_x=q_a_given_x,
             q_z_given_a_y_x=q_z_given_a_y_x,
@@ -27,70 +30,65 @@ class ADGM(chainer.Chain):
         return F.split_axis(x, 2, 1)
 
     @property
+    def train(self):
+        return self.q_a_given_x.train
+
+    @train.setter
     def train(self, val):
-        self.q_a_given_x = val
-        self.q_z_given_a_y_x = val
-        self.q_y_given_a_x = val
-        self.p_a_given_z_y_x = val
-        self.p_x_given_z_y = val
+        self.q_a_given_x.train = val
+        self.q_z_given_a_y_x.train = val
+        self.q_y_given_a_x.train = val
+        self.p_a_given_z_y_x.train = val
+        self.p_x_given_z_y.train = val
 
     def ELBO(self, x, y=None):
         a_enc_mean, a_enc_ln_var = self._split(self.q_a_given_x(x))
         a = F.gaussian(a_enc_mean, a_enc_ln_var)
         if y is None:
             y = F.softmax(self.q_y_given_a_x(a, x))
+            nll_q_y_given_a_x = entropy(y)
+        else:
+            # nll_q_y_given_a_x = chainer.Variable(self.xp.array(0.0, dtype=np.float32))
+            nll_q_y_given_a_x = 0.0
+
         z_enc_mean, z_enc_ln_var = self._split(self.q_z_given_a_y_x(a, y, x))
         z = F.gaussian(z_enc_mean, z_enc_ln_var)
 
-        a_dec_mean, a_dec_ln_var = self.p_a_given_z_y_x(z, y, x)
-        x_dec_mean, x_dec_ln_var = self.p_x_given_z_y(z, y)
+        a_dec_mean, a_dec_ln_var = self._split(self.p_a_given_z_y_x(z, y, x))
+        x_dec_mean, x_dec_ln_var = self._split(self.p_x_given_z_y(z, y))
 
-        nll_p_z = F.gaussian_nll(z, 0, 0)
+        nll_p_z = F.gaussian_nll(z, chainer.Variable(self.xp.zeros_like(z.data)),
+                                 chainer.Variable(self.xp.zeros_like(z.data)))
         nll_p_x_given_z_y = F.gaussian_nll(x, x_dec_mean, x_dec_ln_var)
         nll_p_a_given_z_y_x = F.gaussian_nll(a, a_dec_mean, a_dec_ln_var)
         nll_q_a_given_x = F.gaussian_nll(a, a_enc_mean, a_enc_ln_var)
         nll_q_z_given_a_y_x = F.gaussian_nll(z, z_enc_mean, z_enc_ln_var)
 
-        if y is None:
-            nll_q_y_given_a_x = -entropy(y)
-        else:
-            nll_q_y_given_a_x = 0.0
-
-        return F.sum(nll_p_z + nll_p_x_given_z_y + nll_p_a_given_z_y_x +
-                     nll_q_y_given_a_x + nll_q_a_given_x + nll_q_z_given_a_y_x)
+        return (nll_p_z + nll_p_x_given_z_y + nll_p_a_given_z_y_x +
+                nll_q_y_given_a_x + nll_q_a_given_x + nll_q_z_given_a_y_x)
         
-    def classification(self, x, y):
+    def predict(self, x, y, softmax=False):
         a_enc_mean, a_enc_ln_var = self._split(self.q_a_given_x(x))
         a = F.gaussian(a_enc_mean, a_enc_ln_var)
         y_enc = self.q_y_given_a_x(a, x)
+        if softmax:
+            y_enc = F.softmax(y_enc)
+        return y_enc
+
+    def classification_loss(self, x, y):
+        y_enc = self.predict(x, y)
         return F.softmax_cross_entropy(y_enc, y)
 
-    def __call__(self, x, y=None):
-        loss = self.ELBO(x, y)
+    def accuracy(self, x, y):
+        y_enc = self.predict(x, y)
+        return F.accuracy(x, y)
+
+    def __call__(self, x, y=None, y_onehot=None):
+        loss = self.ELBO(x, y_onehot)
         if y is not None:
-            loss += self.classification(x, y)
+            loss += self.classification_loss(x, y)
         self.loss = float(loss.data)
         return loss
-
-
-class MultiMLP(chainer.Chain):
-
-    def __init__(self, input_dims, units):
-        assert len(units) > 0
-        encoders = chainer.ChainList(*[
-                chainer.links.Linear(input_dim, units[0])
-                for input_dim in input_dims])
-        super(MultiMLP, self).__init__(
-            encoders=encoders, mlps=MLP(units),
-            bn=chainer.links.BatchNormalization(units[0]))
-        self.train = True
-
-    def __call__(self, *xs):
-        assert len(xs) == len(self.encoders)
-        xs = [self.encoders(x) for x in xs]
-        x = self.relu(self.bn(F.sum(xs)))
-        return self.encoder(x)
-        
 
 class MLP(chainer.Chain):
 
@@ -100,7 +98,7 @@ class MLP(chainer.Chain):
                 chainer.links.Linear(units[i], units[i+1])
                 for i in six.moves.range(self.layer_num)])
         bn = chainer.ChainList(*[
-                chainer.links.BatchNormalization(units[i])
+                chainer.links.BatchNormalization(units[i + 1])
                 for i in six.moves.range(self.layer_num - 1)])
         super(MLP, self).__init__(linear=linear, bn=bn)
         self.train = True
@@ -110,4 +108,16 @@ class MLP(chainer.Chain):
             x = self.linear[i](x)
             x = self.bn[i](x, test=not self.train)
             x = F.relu(x)
-        return self.linear[self.layer_num - 1]
+        return self.linear[self.layer_num - 1](x)
+
+
+class MultiMLP(MLP):
+
+    def __init__(self, input_dims, units):
+        input_dim = np.sum(input_dims)
+        super(MultiMLP, self).__init__((input_dim,) + units)
+
+    def __call__(self, *xs):
+        x = F.concat(xs)
+        return super(MultiMLP, self).__call__(x)
+
