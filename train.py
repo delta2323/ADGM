@@ -52,14 +52,14 @@ def next_minibatch(batchsize, *xs_data):
     return [xp.asarray(x_data[i: i + batchsize]) for x_data in xs_data]
 
 
-def to_variable(*xs):
-    return [chainer.Variable(x) for x in xs]
-
-
 def onehot(y, T):
     ret = xp.zeros((len(y), T), dtype=np.float32)
     ret[:, y] = 1
     return ret
+
+
+def to_variable(*xs):
+    return [chainer.Variable(x) for x in xs]
 
 
 for epoch in six.moves.range(args.epoch):
@@ -70,9 +70,12 @@ for epoch in six.moves.range(args.epoch):
         x, y = next_minibatch(args.batchsize, x_train, y_train)
         y_onehot = onehot(y, T)
         xs = to_variable(x, y, y_onehot)
+        batchsize = len(xs[0].data)
+
         optimizer.update(model, *xs)
-        loss += model.loss * len(x)
-        accuracy += float(model.accuracy(xs[0], xs[1]).data) * len(x)
+
+        loss += model.loss * batchsize
+        accuracy += float(model.accuracy(xs[0], xs[1]).data) * batchsize
     loss /= N_train
     accuracy /= N_train
     print('labeled\tloss\t{}\taccuracy\t{}'.format(loss, accuracy))
@@ -81,8 +84,11 @@ for epoch in six.moves.range(args.epoch):
     for i in six.moves.range(0, N_unlabeled, args.batchsize):
         xs = next_minibatch(args.batchsize, x_unlabeled)
         xs = to_variable(*xs)
+        batchsize = len(xs[0].data)
+
         optimizer.update(model, *xs)
-        loss += model.loss * len(x)
+
+        loss += model.loss * batchsize
     loss /= N_unlabeled
     print('unlabeled\tloss\t{}'.format(loss))
 
@@ -92,8 +98,10 @@ for epoch in six.moves.range(args.epoch):
         x, y = next_minibatch(args.batchsize, x_test, y_test)
         y_onehot = onehot(y, T)
         xs = to_variable(x, y, y_onehot)
-        loss += float(model(*xs).data) * len(x)
-        accuracy += float(model.accuracy(xs[0], xs[1]).data) * len(x)
+        batchsize = len(xs[0].data)
+
+        loss += float(model(*xs).data) * batchsize
+        accuracy += float(model.accuracy(xs[0], xs[1]).data) * batchsize
     loss /= N_test
     accuracy /= N_test
     print('test\tloss\t{}\taccuracy\t{}'.format(loss, accuracy))
