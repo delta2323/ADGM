@@ -1,6 +1,6 @@
 import chainer
-import chainer.links as L
 import chainer.functions as F
+import chainer.links as L
 import numpy as np
 import six
 
@@ -9,11 +9,13 @@ def entropy(p):
     return -F.sum(F.log(p) * p)
 
 
-h_dim = 10
+def split(x):
+    return F.split_axis(x, 2, 1)
+
 
 class ADGM(chainer.Chain):
 
-    def __init__(self, x_dim, a_dim, y_dim, z_dim):
+    def __init__(self, x_dim, a_dim, y_dim, z_dim, h_dim):
         q_a_given_x = MLP((x_dim, h_dim, a_dim * 2))
         q_z_given_a_y_x = MultiMLP((a_dim, y_dim, x_dim), (h_dim, z_dim * 2))
         q_y_given_a_x = MultiMLP((a_dim, x_dim), (h_dim, y_dim))
@@ -26,39 +28,32 @@ class ADGM(chainer.Chain):
             p_a_given_z_y_x=p_a_given_z_y_x,
             p_x_given_z_y=p_x_given_z_y)
 
-    def _split(self, x):
-        return F.split_axis(x, 2, 1)
-
     @property
     def train(self):
         return self.q_a_given_x.train
 
     @train.setter
     def train(self, val):
-        self.q_a_given_x.train = val
-        self.q_z_given_a_y_x.train = val
-        self.q_y_given_a_x.train = val
-        self.p_a_given_z_y_x.train = val
-        self.p_x_given_z_y.train = val
+        for c in self._children:
+            self.__dict__[c].train = val
 
     def ELBO(self, x, y=None):
-        a_enc_mean, a_enc_ln_var = self._split(self.q_a_given_x(x))
+        a_enc_mean, a_enc_ln_var = split(self.q_a_given_x(x))
         a = F.gaussian(a_enc_mean, a_enc_ln_var)
         if y is None:
             y = F.softmax(self.q_y_given_a_x(a, x))
             nll_q_y_given_a_x = entropy(y)
         else:
-            # nll_q_y_given_a_x = chainer.Variable(self.xp.array(0.0, dtype=np.float32))
             nll_q_y_given_a_x = 0.0
 
-        z_enc_mean, z_enc_ln_var = self._split(self.q_z_given_a_y_x(a, y, x))
+        z_enc_mean, z_enc_ln_var = split(self.q_z_given_a_y_x(a, y, x))
         z = F.gaussian(z_enc_mean, z_enc_ln_var)
 
-        a_dec_mean, a_dec_ln_var = self._split(self.p_a_given_z_y_x(z, y, x))
-        x_dec_mean, x_dec_ln_var = self._split(self.p_x_given_z_y(z, y))
+        a_dec_mean, a_dec_ln_var = split(self.p_a_given_z_y_x(z, y, x))
+        x_dec_mean, x_dec_ln_var = split(self.p_x_given_z_y(z, y))
 
-        nll_p_z = F.gaussian_nll(z, chainer.Variable(self.xp.zeros_like(z.data)),
-                                 chainer.Variable(self.xp.zeros_like(z.data)))
+        zero = chainer.Variable(self.xp.zeros_like(z.data), volatile='auto')
+        nll_p_z = F.gaussian_nll(z, zero, zero)
         nll_p_x_given_z_y = F.gaussian_nll(x, x_dec_mean, x_dec_ln_var)
         nll_p_a_given_z_y_x = F.gaussian_nll(a, a_dec_mean, a_dec_ln_var)
         nll_q_a_given_x = F.gaussian_nll(a, a_enc_mean, a_enc_ln_var)
@@ -66,9 +61,9 @@ class ADGM(chainer.Chain):
 
         return (nll_p_z + nll_p_x_given_z_y + nll_p_a_given_z_y_x +
                 nll_q_y_given_a_x + nll_q_a_given_x + nll_q_z_given_a_y_x)
-        
+
     def predict(self, x, y, softmax=False):
-        a_enc_mean, a_enc_ln_var = self._split(self.q_a_given_x(x))
+        a_enc_mean, a_enc_ln_var = split(self.q_a_given_x(x))
         a = F.gaussian(a_enc_mean, a_enc_ln_var)
         y_enc = self.q_y_given_a_x(a, x)
         if softmax:
@@ -81,7 +76,7 @@ class ADGM(chainer.Chain):
 
     def accuracy(self, x, y):
         y_enc = self.predict(x, y)
-        return F.accuracy(x, y)
+        return F.accuracy(y_enc, y)
 
     def __call__(self, x, y=None, y_onehot=None):
         loss = self.ELBO(x, y_onehot)
@@ -90,16 +85,15 @@ class ADGM(chainer.Chain):
         self.loss = float(loss.data)
         return loss
 
+
 class MLP(chainer.Chain):
 
     def __init__(self, units):
         self.layer_num = len(units) - 1
-        linear = chainer.ChainList(*[
-                chainer.links.Linear(units[i], units[i+1])
-                for i in six.moves.range(self.layer_num)])
-        bn = chainer.ChainList(*[
-                chainer.links.BatchNormalization(units[i + 1])
-                for i in six.moves.range(self.layer_num - 1)])
+        linear = chainer.ChainList(*[L.Linear(units[i], units[i + 1])
+                                     for i in six.moves.range(self.layer_num)])
+        bn = chainer.ChainList(*[L.BatchNormalization(units[i + 1])
+                                 for i in six.moves.range(self.layer_num - 1)])
         super(MLP, self).__init__(linear=linear, bn=bn)
         self.train = True
 
@@ -120,4 +114,3 @@ class MultiMLP(MLP):
     def __call__(self, *xs):
         x = F.concat(xs)
         return super(MultiMLP, self).__call__(x)
-

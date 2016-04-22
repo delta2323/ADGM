@@ -12,11 +12,11 @@ def load_mnist(N_unlabeled=100, N_test=10000):
     N_unlabeled /= T
 
     x_split = [np.split(x[y == i], [N_unlabeled]) for i in six.moves.range(T)]
-    x_train = np.concatenate([x[0] for x in x_split])
-    x_rest = np.concatenate([x[1] for x in x_split])
+    x_train = np.concatenate([x_[0] for x_ in x_split])
+    x_rest = np.concatenate([x_[1] for x_ in x_split])
     y_split = [np.split(y[y == i], [N_unlabeled]) for i in six.moves.range(T)]
-    y_train = np.concatenate([y[0] for y in y_split])
-    y_rest = np.concatenate([y[1] for y in y_split])
+    y_train = np.concatenate([y_[0] for y_ in y_split])
+    y_rest = np.concatenate([y_[1] for y_ in y_split])
 
     N = 70000
     N_rest = N - N_unlabeled * T
