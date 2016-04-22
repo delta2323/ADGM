@@ -19,7 +19,7 @@ parser.add_argument('--batchsize', default=128, type=int, help='batchsize')
 parser.add_argument('--epoch', default=10, type=int, help='epoch')
 parser.add_argument('--a-dim', default=10, type=int)
 parser.add_argument('--z-dim', default=10, type=int)
-
+args = parser.parse_args()
 
 np.random.seed(args.seed)
 if args.gpu >= 0:

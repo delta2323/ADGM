@@ -5,9 +5,10 @@ import numpy as np
 import six
 
 
+h_dim = 10
+
 class ADGM(chainer.Chain):
 
-    h_dim = 10
 
     def __init__(self, x_dim, a_dim, y_dim, z_dim):
         q_a_given_x = MLP((x_dim, h_dim, a_dim))
@@ -76,10 +77,10 @@ class MultiMLP(chainer.Chain):
 
     def __init__(self, input_dims, units):
         assert len(units) > 0
-        encoders = chainer.ChainList([
-                chainer.Linear(input_dim, units[0])
-                for input_dim in six.moves.range(input_dims)])
-        super(self, MultiMLP).init(
+        encoders = chainer.ChainList(*[
+                chainer.links.Linear(input_dim, units[0])
+                for input_dim in input_dims])
+        super(MultiMLP, self).__init__(
             encoders=encoders, mlps=MLP(units),
             bn=chainer.links.BatchNormalization(units[0]))
         self.train = True
@@ -95,12 +96,12 @@ class MLP(chainer.Chain):
 
     def __init__(self, units):
         self.layer_num = len(units) - 1
-        linear = chainer.ChainList([
-                chainer.Linear(units[i], units[i+1])
+        linear = chainer.ChainList(*[
+                chainer.links.Linear(units[i], units[i+1])
                 for i in six.moves.range(self.layer_num)])
-        bn = chainer.ChainList(
-            chainer.links.BatchNormalization(units[i])
-            for i in six.moves.range(self.layer_num - 1))
+        bn = chainer.ChainList(*[
+                chainer.links.BatchNormalization(units[i])
+                for i in six.moves.range(self.layer_num - 1)])
         super(MLP, self).__init__(linear=linear, bn=bn)
         self.train = True
 
