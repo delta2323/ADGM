@@ -2,7 +2,6 @@ import math
 
 from chainer.functions.activation import softplus
 from chainer.functions.math import exponential
-from chainer.functions.math import sum
 from chainer import variable
 
 
@@ -18,7 +17,6 @@ def gaussian_nll(x, mean, ln_var):
     assert isinstance(mean, variable.Variable)
     assert isinstance(ln_var, variable.Variable)
 
-    D = x.data.size
     x_prec = exponential.exp(-ln_var)
     x_diff = x - mean
     x_power = (x_diff * x_diff) * x_prec * -0.5

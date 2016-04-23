@@ -23,6 +23,7 @@ parser.add_argument('--a-dim', default=100, type=int)
 parser.add_argument('--z-dim', default=100, type=int)
 parser.add_argument('--h-dim', default=500, type=int)
 parser.add_argument('--beta', default=1, type=float)
+parser.add_argument('--alpha', default=3e-4, type=float)
 args = parser.parse_args()
 
 
@@ -52,7 +53,7 @@ if args.gpu >= 0:
 xp = cuda.cupy if args.gpu >= 0 else np
 
 
-optimizer = optimizers.Adam()
+optimizer = optimizers.Adam(alpha=args.alpha)
 optimizer.setup(model)
 
 
@@ -70,9 +71,6 @@ labeled_loss = aggregator.Aggregator()
 labeled_accuracy = aggregator.Aggregator()
 unlabeled_loss = aggregator.Aggregator()
 for iteration in six.moves.range(args.iteration):
-    if (iteration + 1) % 10 == 0:
-        print('iteration\t{}'.format(iteration))
-
     # Supervised training
     model.train = True
     (x, y), _ = labeled_data.get_minibatch()
@@ -83,44 +81,47 @@ for iteration in six.moves.range(args.iteration):
 
     labeled_loss.sum += model.loss * batchsize
     labeled_loss.n += batchsize
-    labeled_accuracy.sum += float(model.accuracy(xs[0], xs[1]).data) * batchsize
+    labeled_accuracy.sum += float(
+        model.accuracy(xs[0], xs[1]).data) * batchsize
     labeled_accuracy.n += batchsize
 
-    if (iteration + 1) % 10 == 0:
-        print('labeled\tloss\t{}\taccuracy\t{}'.format(labeled_loss.mean(),
-                                                       labeled_accuracy.mean()))
+    if (iteration + 1) % 5 == 0:
+        print('iteration\t{}\tlabel\tloss\t{}\taccuracy\t{}'.format(
+            iteration, labeled_loss.mean(), labeled_accuracy.mean()))
         labeled_loss.reset()
         labeled_accuracy.reset()
 
     # Unsupervised training
+    model.train = True
     x, _ = unlabeled_data.get_minibatch()
     batchsize = len(x)
     x, = to_variable((x,))
-    batchsize = len(x.data)
     optimizer.update(model, x)
 
     unlabeled_loss.sum += model.loss * batchsize
     unlabeled_loss.n += batchsize
 
-    if (iteration + 1) % 10 == 0:
-        print('unlabeled\tloss\t{}'.format(unlabeled_loss.mean()))
+    if (iteration + 1) % 5 == 0:
+        print('iteration\t{}\tunlabel\tloss\t{}'.format(
+            iteration, unlabeled_loss.mean()))
         unlabeled_loss.reset()
 
     # Test
-    if (iteration + 1) % 10 == 0:
+    if (iteration + 1) % 5 == 0:
         model.train = False
         test_loss = aggregator.Aggregator()
         test_accuracy = aggregator.Aggregator()
         test_data.reset()
         while not test_data.exhaust:
             (x, y), _ = test_data.get_minibatch()
+            batchsize = len(x)
             y_onehot = onehot(y, T)
             xs = to_variable((x, y, y_onehot), 'on')
 
             test_loss.sum += float(model(*xs).data) * batchsize
             test_loss.n += batchsize
-            accuracy = float(model.accuracy(xs[0], xs[1]).data) * batchsize
-            test_accuracy.sum += accuracy
+            test_accuracy.sum += float(
+                model.accuracy(xs[0], xs[1]).data) * batchsize
             test_accuracy.n += batchsize
-        print('test\tloss\t{}\taccuracy\t{}'.format(test_loss.mean(),
-                                                    test_accuracy.mean()))
+        print('iteration\t{}\ttest\tloss\t{}\taccuracy\t{}'.format(
+            iteration, test_loss.mean(), test_accuracy.mean()))
