@@ -3,23 +3,23 @@ import six
 from sklearn.datasets import mldata
 
 
-def load_mnist(N_unlabeled=100, N_test=10000):
+def load_mnist(N_labeled=100, N_test=10000):
     data = mldata.fetch_mldata('MNIST original')
     x = data['data'].astype(np.float32) / 255
     y = data['target'].astype(np.int32)
 
     T = 10
-    N_unlabeled /= T
+    N_labeled /= T
 
-    x_split = [np.split(x[y == i], [N_unlabeled]) for i in six.moves.range(T)]
+    x_split = [np.split(x[y == i], [N_labeled]) for i in six.moves.range(T)]
     x_train = np.concatenate([x_[0] for x_ in x_split])
     x_rest = np.concatenate([x_[1] for x_ in x_split])
-    y_split = [np.split(y[y == i], [N_unlabeled]) for i in six.moves.range(T)]
+    y_split = [np.split(y[y == i], [N_labeled]) for i in six.moves.range(T)]
     y_train = np.concatenate([y_[0] for y_ in y_split])
     y_rest = np.concatenate([y_[1] for y_ in y_split])
 
     N = 70000
-    N_rest = N - N_unlabeled * T
+    N_rest = N - N_labeled * T
     perm = np.random.permutation(N_rest)
     x_unlabeled, x_test = np.split(x_rest[perm], [N_rest - N_test])
     _, y_test = np.split(y_rest[perm], [N_rest - N_test])

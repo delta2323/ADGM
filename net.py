@@ -44,7 +44,7 @@ class ADGM(chainer.Chain):
             y = F.softmax(self.q_y_given_a_x(a, x))
             nll_q_y_given_a_x = entropy(y)
         else:
-            nll_q_y_given_a_x = 0.0
+            nll_q_y_given_a_x = chainer.Variable(self.xp.array(0.0, dtype=np.float32), volatile='auto')
 
         z_enc_mean, z_enc_ln_var = split(self.q_z_given_a_y_x(a, y, x))
         z = F.gaussian(z_enc_mean, z_enc_ln_var)
@@ -54,13 +54,18 @@ class ADGM(chainer.Chain):
 
         zero = chainer.Variable(self.xp.zeros_like(z.data), volatile='auto')
         nll_p_z = F.gaussian_nll(z, zero, zero)
-        nll_p_x_given_z_y = F.gaussian_nll(x, x_dec_mean, x_dec_ln_var)
+        nll_p_x_given_z_y = F.bernoulli_nll(x, x_dec_mean)
         nll_p_a_given_z_y_x = F.gaussian_nll(a, a_dec_mean, a_dec_ln_var)
         nll_q_a_given_x = F.gaussian_nll(a, a_enc_mean, a_enc_ln_var)
         nll_q_z_given_a_y_x = F.gaussian_nll(z, z_enc_mean, z_enc_ln_var)
 
-        return (nll_p_z + nll_p_x_given_z_y + nll_p_a_given_z_y_x +
-                nll_q_y_given_a_x + nll_q_a_given_x + nll_q_z_given_a_y_x)
+        sum = (nll_p_z + nll_p_x_given_z_y + nll_p_a_given_z_y_x +
+               nll_q_y_given_a_x + nll_q_a_given_x + nll_q_z_given_a_y_x)
+#         if self.verbose:
+#             print(float(sum.data), float(nll_p_z.data), float(nll_p_x_given_z_y.data), float(nll_p_a_given_z_y_x.data),
+#                   float(nll_q_y_given_a_x.data), float(nll_q_a_given_x.data), float(nll_q_z_given_a_y_x.data))
+        return sum
+
 
     def predict(self, x, y, softmax=False):
         a_enc_mean, a_enc_ln_var = split(self.q_a_given_x(x))

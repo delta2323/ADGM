@@ -3,6 +3,7 @@ import numpy as np
 
 class DataFeeder(object):
 
+    # assume all elements in data have same length
     def __init__(self, data, batchsize=128):
         if not isinstance(data, tuple):
             data = (data,)
@@ -35,7 +36,6 @@ class DataFeeder(object):
             ret = ret[0]
 
         self.pos += batchsize
-        # assume all data have same length
         if self.pos >= len(self.data[0]):
             self.next_epoch()
 

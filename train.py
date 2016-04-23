@@ -25,6 +25,9 @@ parser.add_argument('--h-dim', default=50, type=int)
 args = parser.parse_args()
 
 
+chainer.set_debug(True)
+
+
 np.random.seed(args.seed)
 if args.gpu >= 0:
     cuda.cupy.random.seed(args.seed)
@@ -67,6 +70,7 @@ for iteration in six.moves.range(args.iteration):
     if (iteration + 1) % 100 == 0:
         print('iteration\t{}'.format(iteration))
 
+    model.verbose = (iteration + 1) % 10 == 0
     # Supervised training
     model.train = True
     (x, y), _ = train_data.get_minibatch()
@@ -111,6 +115,7 @@ for iteration in six.moves.range(args.iteration):
             y_onehot = onehot(y, T)
             xs = to_variable((x, y, y_onehot), 'on')
 
+            model.verbose = test_data.pos == 0
             test_loss.sum += float(model(*xs).data) * batchsize
             test_loss.n += batchsize
             accuracy = float(model.accuracy(xs[0], xs[1]).data) * batchsize
