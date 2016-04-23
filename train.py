@@ -7,7 +7,9 @@ from chainer import optimizers
 import numpy as np
 import six
 
+import aggregator
 import data
+import feeder
 import net
 
 
@@ -16,7 +18,7 @@ parser.add_argument('--gpu', default=-1, type=int,
                     help='GPU ID (negative value indicates CPU)')
 parser.add_argument('--seed', default=0, type=int, help='random seed')
 parser.add_argument('--batchsize', default=128, type=int, help='batchsize')
-parser.add_argument('--epoch', default=10, type=int, help='epoch')
+parser.add_argument('--iteration', default=100000, type=int, help='iteration')
 parser.add_argument('--a-dim', default=10, type=int)
 parser.add_argument('--z-dim', default=10, type=int)
 parser.add_argument('--h-dim', default=50, type=int)
@@ -33,9 +35,10 @@ T = 10
 
 
 x_train, y_train, x_test, y_test, x_unlabeled = data.load_mnist()
-N_train = len(x_train)
-N_test = len(x_test)
-N_unlabeled = len(x_unlabeled)
+train_data = feeder.DataFeeder((x_train, y_train))
+test_data = feeder.DataFeeder((x_test, y_test))
+unlabeled_data = feeder.DataFeeder(x_unlabeled)
+N_test = len(test_data)
 
 
 model = net.ADGM(D, args.a_dim, T, args.z_dim, args.h_dim)
@@ -48,60 +51,70 @@ optimizer = optimizers.Adam()
 optimizer.setup(model)
 
 
-def next_minibatch(batchsize, *xs_data):
-    return [xp.asarray(x_data[i: i + batchsize]) for x_data in xs_data]
-
-
 def onehot(y, T):
     ret = xp.zeros((len(y), T), dtype=np.float32)
     ret[:, y] = 1
     return ret
 
 
-def to_variable(*xs):
-    return [chainer.Variable(x) for x in xs]
+def to_variable(xs, volatile='off'):
+    return [chainer.Variable(x, volatile=volatile) for x in xs]
 
 
-for epoch in six.moves.range(args.epoch):
-    print('epoch\t{}'.format(epoch))
+train_loss = aggregator.Aggregator()
+train_accuracy = aggregator.Aggregator()
+unlabeled_loss = aggregator.Aggregator()
+for iteration in six.moves.range(args.iteration):
+    if (iteration + 1) % 100 == 0:
+        print('iteration\t{}'.format(iteration))
+
+    # Supervised training
     model.train = True
-    loss, accuracy = 0.0, 0.0
-    for i in six.moves.range(0, N_train, args.batchsize):
-        x, y = next_minibatch(args.batchsize, x_train, y_train)
-        y_onehot = onehot(y, T)
-        xs = to_variable(x, y, y_onehot)
-        batchsize = len(xs[0].data)
+    (x, y), _, _ = train_data.get_minibatch()
+    batchsize = len(x)
+    y_onehot = onehot(y, T)
+    xs = to_variable((x, y, y_onehot))
+    optimizer.update(model, *xs)
 
-        optimizer.update(model, *xs)
+    train_loss.sum += model.loss * batchsize
+    train_loss.n += batchsize
+    train_accuracy.sum += float(model.accuracy(xs[0], xs[1]).data) * batchsize
+    train_accuracy.n += batchsize
 
-        loss += model.loss * batchsize
-        accuracy += float(model.accuracy(xs[0], xs[1]).data) * batchsize
-    loss /= N_train
-    accuracy /= N_train
-    print('labeled\tloss\t{}\taccuracy\t{}'.format(loss, accuracy))
+    if (iteration + 1) % 100 == 0:
+        print('labeled\tloss\t{}\taccuracy\t{}'.format(train_loss.mean(),
+                                                       train_accuracy.mean()))
+        train_loss.reset()
+        train_accuracy.reset()
 
-    loss = 0.0
-    for i in six.moves.range(0, N_unlabeled, args.batchsize):
-        xs = next_minibatch(args.batchsize, x_unlabeled)
-        xs = to_variable(*xs)
-        batchsize = len(xs[0].data)
+    # Unsupervised training
+    x, _, _ = unlabeled_data.get_minibatch()
+    batchsize = len(x)
+    x, = to_variable((x,))
+    batchsize = len(x.data)
+    optimizer.update(model, x)
 
-        optimizer.update(model, *xs)
+    unlabeled_loss.sum += model.loss * batchsize
+    unlabeled_loss.n += batchsize
 
-        loss += model.loss * batchsize
-    loss /= N_unlabeled
-    print('unlabeled\tloss\t{}'.format(loss))
+    if (iteration + 1) % 100 == 0:
+        print('unlabeled\tloss\t{}'.format(unlabeled_loss.mean()))
+        unlabeled_loss.reset()
 
-    model.train = False
-    loss, accuracy = 0.0, 0.0
-    for i in six.moves.range(0, N_test, args.batchsize):
-        x, y = next_minibatch(args.batchsize, x_test, y_test)
-        y_onehot = onehot(y, T)
-        xs = to_variable(x, y, y_onehot)
-        batchsize = len(xs[0].data)
+    # Test
+    if (iteration + 1) % 100 == 0:
+        model.train = False
+        test_loss = aggregator.Aggregator()
+        test_accuracy = aggregator.Aggregator()
+        for i in six.moves.range(0, N_test, args.batchsize):
+            (x, y), _, _ = test_data.get_minibatch()
+            y_onehot = onehot(y, T)
+            xs = to_variable((x, y, y_onehot), 'on')
 
-        loss += float(model(*xs).data) * batchsize
-        accuracy += float(model.accuracy(xs[0], xs[1]).data) * batchsize
-    loss /= N_test
-    accuracy /= N_test
-    print('test\tloss\t{}\taccuracy\t{}'.format(loss, accuracy))
+            test_loss.sum += float(model(*xs).data) * batchsize
+            test_loss.n += batchsize
+            accuracy = float(model.accuracy(xs[0], xs[1]).data) * batchsize
+            test_accuracy.sum += accuracy
+            test_accuracy.n += batchsize
+        print('test\tloss\t{}\taccuracy\t{}'.format(test_loss.mean(),
+                                                    test_accuracy.mean()))
