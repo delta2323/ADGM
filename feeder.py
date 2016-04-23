@@ -1,4 +1,4 @@
-import numpy
+import numpy as np
 
 
 class DataFeeder(object):
@@ -13,13 +13,13 @@ class DataFeeder(object):
     def reset(self):
         self.pos = 0
         self.epoch = 0
-        self.perm = numpy.random.permutation(len(self.data[0]))
+        self.perm = np.random.permutation(len(self))
         self.exhaust = False
 
     def next_epoch(self):
         self.pos = 0
         self.epoch += 1
-        self.perm = numpy.random.permutation(len(self.data[0]))
+        self.perm = np.random.permutation(len(self))
         self.exhaust = True
 
     def __len__(self):
