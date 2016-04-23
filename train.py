@@ -38,7 +38,6 @@ x_train, y_train, x_test, y_test, x_unlabeled = data.load_mnist()
 train_data = feeder.DataFeeder((x_train, y_train))
 test_data = feeder.DataFeeder((x_test, y_test))
 unlabeled_data = feeder.DataFeeder(x_unlabeled)
-N_test = len(test_data)
 
 
 model = net.ADGM(D, args.a_dim, T, args.z_dim, args.h_dim)
@@ -70,7 +69,7 @@ for iteration in six.moves.range(args.iteration):
 
     # Supervised training
     model.train = True
-    (x, y), _, _ = train_data.get_minibatch()
+    (x, y), _ = train_data.get_minibatch()
     batchsize = len(x)
     y_onehot = onehot(y, T)
     xs = to_variable((x, y, y_onehot))
@@ -88,7 +87,7 @@ for iteration in six.moves.range(args.iteration):
         train_accuracy.reset()
 
     # Unsupervised training
-    x, _, _ = unlabeled_data.get_minibatch()
+    x, _ = unlabeled_data.get_minibatch()
     batchsize = len(x)
     x, = to_variable((x,))
     batchsize = len(x.data)
@@ -106,8 +105,9 @@ for iteration in six.moves.range(args.iteration):
         model.train = False
         test_loss = aggregator.Aggregator()
         test_accuracy = aggregator.Aggregator()
-        for i in six.moves.range(0, N_test, args.batchsize):
-            (x, y), _, _ = test_data.get_minibatch()
+        test_data.reset()
+        while not test_data.exhaust:
+            (x, y), _ = test_data.get_minibatch()
             y_onehot = onehot(y, T)
             xs = to_variable((x, y, y_onehot), 'on')
 
