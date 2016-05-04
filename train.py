@@ -79,7 +79,7 @@ for iteration in six.moves.range(args.iteration):
     xs = to_variable((x, y, y_onehot))
     optimizer.update(model, *xs)
 
-    labeled_loss.sum += model.loss * batchsize
+    labeled_loss.sum += model.loss
     labeled_loss.n += batchsize
     labeled_accuracy.sum += float(
         model.accuracy(xs[0], xs[1]).data) * batchsize
@@ -98,7 +98,7 @@ for iteration in six.moves.range(args.iteration):
     x, = to_variable((x,))
     optimizer.update(model, x)
 
-    unlabeled_loss.sum += model.loss * batchsize
+    unlabeled_loss.sum += model.loss
     unlabeled_loss.n += batchsize
 
     if (iteration + 1) % 5 == 0:
@@ -118,7 +118,7 @@ for iteration in six.moves.range(args.iteration):
             y_onehot = onehot(y, T)
             xs = to_variable((x, y, y_onehot), 'on')
 
-            test_loss.sum += float(model(*xs).data) * batchsize
+            test_loss.sum += float(model(*xs).data)
             test_loss.n += batchsize
             test_accuracy.sum += float(
                 model.accuracy(xs[0], xs[1]).data) * batchsize
