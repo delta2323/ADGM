@@ -86,7 +86,7 @@ for iteration in six.moves.range(args.iteration):
     labeled_accuracy.n += batchsize
 
     if (iteration + 1) % 5 == 0:
-        print('iteration\t{}\tlabel\tloss\t{}\taccuracy\t{}'.format(
+        print('iteration\t{0}\tlabel\tloss\t{1:3f}\taccuracy\t{2:3f}'.format(
             iteration, labeled_loss.mean(), labeled_accuracy.mean()))
         labeled_loss.reset()
         labeled_accuracy.reset()
@@ -102,7 +102,7 @@ for iteration in six.moves.range(args.iteration):
     unlabeled_loss.n += batchsize
 
     if (iteration + 1) % 5 == 0:
-        print('iteration\t{}\tunlabel\tloss\t{}'.format(
+        print('iteration\t{0}\tunlabel\tloss\t{1:3f}'.format(
             iteration, unlabeled_loss.mean()))
         unlabeled_loss.reset()
 
@@ -122,5 +122,5 @@ for iteration in six.moves.range(args.iteration):
             test_accuracy.sum += float(
                 model.accuracy(xs[0], xs[1]).data) * batchsize
             test_accuracy.n += batchsize
-        print('iteration\t{}\ttest\tloss\t{}\taccuracy\t{}'.format(
+        print('iteration\t{0}\ttest\tloss\t{1:3f}\taccuracy\t{2:3f}'.format(
             iteration, test_loss.mean(), test_accuracy.mean()))
