@@ -75,8 +75,7 @@ for iteration in six.moves.range(args.iteration):
     model.train = True
     (x, y), _ = labeled_data.get_minibatch()
     batchsize = len(x)
-    y_onehot = onehot(y, T)
-    xs = to_variable((x, y, y_onehot))
+    xs = to_variable((x, y))
     optimizer.update(model, *xs)
 
     labeled_loss.sum += model.loss
@@ -115,8 +114,7 @@ for iteration in six.moves.range(args.iteration):
         while not test_data.exhaust:
             (x, y), _ = test_data.get_minibatch()
             batchsize = len(x)
-            y_onehot = onehot(y, T)
-            xs = to_variable((x, y, y_onehot), 'on')
+            xs = to_variable((x, y), 'on')
 
             test_loss.sum += float(model(*xs).data)
             test_loss.n += batchsize

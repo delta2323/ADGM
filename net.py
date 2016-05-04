@@ -49,13 +49,18 @@ class ADGM(chainer.Chain):
             self.__dict__[c].train = val
 
     def loss_z_dep(self, x, y, a):
+        def to_onehot(y, T):
+            ret = np.zeros((len(y), T), dtype=np.float32)
+            ret[:, y.get()] = 1.0
+            return chainer.Variable(self.xp.asarray(ret), volatile='auto')
+
+        y = to_onehot(y.data, self.y_dim)
         z_mean, z_ln_var = split(self.q_z_given_a_y_x(a, y, x))
         z = F.gaussian(z_mean, z_ln_var)
-
         a_mean, a_ln_var = split(self.p_a_given_z_y_x(z, y, x))
-        x_mean, x_ln_var = split(self.p_x_given_z_y(z, y))
-
+        x_mean, _ = split(self.p_x_given_z_y(z, y))
         zero = chainer.Variable(self.xp.zeros_like(z.data), volatile='auto')
+
         nll_p_z = F.sum(l.gaussian_nll(z, zero, zero), axis=1)
         nll_p_x_given_z_y = F.sum(l.bernoulli_nll(x, x_mean), axis=1)
         nll_p_a_given_z_y_x = F.sum(
@@ -81,37 +86,35 @@ class ADGM(chainer.Chain):
         y_pred = self.predict(x)
         return F.accuracy(y_pred, y)
 
-    def loss_one(self, x, y=None, y_onehot=None):
+    def loss_one(self, x, y=None):
         a_mean, a_ln_var = split(self.q_a_given_x(x))
         a = F.gaussian(a_mean, a_ln_var)
 
         # nll_q_a_given_x
-        loss = F.sum(l.gaussian_nll(a, a_mean, a_ln_var))
+        loss = -F.sum(l.gaussian_nll(a, a_mean, a_ln_var))
         loss += np.log(self.y_dim)  # nll_p_given_y
-        q_y_given_a_x_unnormalized = self.q_y_given_a_x(a, x)
         if y is None:
             losses_z_dep = []
             for i in six.moves.range(self.y_dim):
-                y_onehot = self.xp.zeros(
-                    (len(x.data), self.y_dim), dtype=np.float32)
-                y_onehot[:, i] = 1.0
-                y_onehot = chainer.Variable(y_onehot, volatile='auto')
-                loss_z_dep = self.loss_z_dep(x, y_onehot, a)
+                y_ = chainer.Variable(
+                    self.xp.full((len(x.data), self.y_dim), i, dtype=np.int32),
+                    volatile='auto')
+                loss_z_dep = self.loss_z_dep(x, y_, a)
                 loss_z_dep = F.reshape(loss_z_dep, (-1, 1))
                 losses_z_dep.append(loss_z_dep)
-            q_y_given_a_x = F.softmax(q_y_given_a_x_unnormalized)
+            q_y_given_a_x = F.softmax(self.q_y_given_a_x(a, x))
             loss -= entropy(q_y_given_a_x)  # nll_q_y_given_a_x
             # nll_p_z + nll_p_x_given_z_y + nll_p_a_given_x_y_z - nll_q_z_given_a_y_x
             loss += F.sum(F.concat(losses_z_dep) * q_y_given_a_x)
         else:
-            loss += F.sum(self.loss_z_dep(x, y_onehot, a))
+            loss += F.sum(self.loss_z_dep(x, y, a))
             loss += self.gamma * self.classification_loss(x, y)
         return loss
 
-    def __call__(self, x, y=None, y_onehot=None):
+    def __call__(self, x, y=None):
         loss = 0.0
         for _ in six.moves.range(self.sampling_num):
-            loss += self.loss_one(x, y, y_onehot)
+            loss += self.loss_one(x, y)
         loss /= self.sampling_num
         self.loss = float(loss.data)
         return loss
