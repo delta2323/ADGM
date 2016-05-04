@@ -48,63 +48,63 @@ class ADGM(chainer.Chain):
         for c in self._children:
             self.__dict__[c].train = val
 
-    def ELBO(self, x, y, a):
-        z_enc_mean, z_enc_ln_var = split(self.q_z_given_a_y_x(a, y, x))
-        z = F.gaussian(z_enc_mean, z_enc_ln_var)
+    def loss_z_dep(self, x, y, a):
+        z_mean, z_ln_var = split(self.q_z_given_a_y_x(a, y, x))
+        z = F.gaussian(z_mean, z_ln_var)
 
-        a_dec_mean, a_dec_ln_var = split(self.p_a_given_z_y_x(z, y, x))
-        x_dec_mean, x_dec_ln_var = split(self.p_x_given_z_y(z, y))
+        a_mean, a_ln_var = split(self.p_a_given_z_y_x(z, y, x))
+        x_mean, x_ln_var = split(self.p_x_given_z_y(z, y))
 
         zero = chainer.Variable(self.xp.zeros_like(z.data), volatile='auto')
         nll_p_z = F.sum(l.gaussian_nll(z, zero, zero), axis=1)
-        nll_p_x_given_z_y = F.sum(l.bernoulli_nll(x, x_dec_mean), axis=1)
+        nll_p_x_given_z_y = F.sum(l.bernoulli_nll(x, x_mean), axis=1)
         nll_p_a_given_z_y_x = F.sum(
-            l.gaussian_nll(a, a_dec_mean, a_dec_ln_var), axis=1)
+            l.gaussian_nll(a, a_mean, a_ln_var), axis=1)
         nll_q_z_given_a_y_x = F.sum(
-            l.gaussian_nll(z, z_enc_mean, z_enc_ln_var), axis=1)
+            l.gaussian_nll(z, z_mean, z_ln_var), axis=1)
 
         return (nll_p_z + nll_p_x_given_z_y +
-                nll_p_a_given_z_y_x + nll_q_z_given_a_y_x)
+                nll_p_a_given_z_y_x - nll_q_z_given_a_y_x)
 
     def predict(self, x, softmax=False):
-        a_enc_mean, _ = split(self.q_a_given_x(x))
-        y_enc = self.q_y_given_a_x(a_enc_mean, x)
+        a_mean, _ = split(self.q_a_given_x(x))
+        y_pred = self.q_y_given_a_x(a_mean, x)
         if softmax:
-            y_enc = F.softmax(y_enc)
-        return y_enc
+            y_pred = F.softmax(y_pred)
+        return y_pred
 
     def classification_loss(self, x, y):
-        y_enc = self.predict(x)
-        return F.softmax_cross_entropy(y_enc, y)
+        y_pred = self.predict(x)
+        return F.softmax_cross_entropy(y_pred, y)
 
     def accuracy(self, x, y):
-        y_enc = self.predict(x)
-        return F.accuracy(y_enc, y)
+        y_pred = self.predict(x)
+        return F.accuracy(y_pred, y)
 
     def loss_one(self, x, y=None, y_onehot=None):
-        a_enc_mean, a_enc_ln_var = split(self.q_a_given_x(x))
-        a = F.gaussian(a_enc_mean, a_enc_ln_var)
+        a_mean, a_ln_var = split(self.q_a_given_x(x))
+        a = F.gaussian(a_mean, a_ln_var)
 
         # nll_q_a_given_x
-        loss = F.sum(l.gaussian_nll(a, a_enc_mean, a_enc_ln_var))
+        loss = F.sum(l.gaussian_nll(a, a_mean, a_ln_var))
+        loss += np.log(self.y_dim)  # nll_p_given_y
         q_y_given_a_x_unnormalized = self.q_y_given_a_x(a, x)
         if y is None:
-            losses = []
+            losses_z_dep = []
             for i in six.moves.range(self.y_dim):
                 y_onehot = self.xp.zeros(
                     (len(x.data), self.y_dim), dtype=np.float32)
                 y_onehot[:, i] = 1.0
                 y_onehot = chainer.Variable(y_onehot, volatile='auto')
-                loss_given_y = self.ELBO(x, y_onehot, a)
-                loss_given_y = F.reshape(loss_given_y, (-1, 1))
-                losses.append(loss_given_y)
+                loss_z_dep = self.loss_z_dep(x, y_onehot, a)
+                loss_z_dep = F.reshape(loss_z_dep, (-1, 1))
+                losses_z_dep.append(loss_z_dep)
             q_y_given_a_x = F.softmax(q_y_given_a_x_unnormalized)
-            loss += entropy(q_y_given_a_x)
-            loss += F.sum(F.concat(losses) * q_y_given_a_x)
+            loss -= entropy(q_y_given_a_x)  # nll_q_y_given_a_x
+            # nll_p_z + nll_p_x_given_z_y + nll_p_a_given_x_y_z - nll_q_z_given_a_y_x
+            loss += F.sum(F.concat(losses_z_dep) * q_y_given_a_x)
         else:
-            # nll_q_y_given_a_x
-            loss += F.softmax_cross_entropy(q_y_given_a_x_unnormalized, y)
-            loss += F.sum(self.ELBO(x, y_onehot, a))
+            loss += F.sum(self.loss_z_dep(x, y_onehot, a))
             loss += self.gamma * self.classification_loss(x, y)
         return loss
 
