@@ -24,10 +24,11 @@ parser.add_argument('--z-dim', default=100, type=int)
 parser.add_argument('--h-dim', default=500, type=int)
 parser.add_argument('--beta', default=1, type=float)
 parser.add_argument('--alpha', default=3e-4, type=float)
+parser.add_argument('--debug', action='store_true')
 args = parser.parse_args()
 
-
-chainer.set_debug(True)
+if args.debug:
+    chainer.set_debug(True)
 
 
 np.random.seed(args.seed)
