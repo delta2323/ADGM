@@ -58,13 +58,13 @@ optimizer.setup(model)
 
 
 def onehot(y, T):
-    ret = xp.zeros((len(y), T), dtype=np.float32)
+    ret = np.zeros((len(y), T), dtype=np.float32)
     ret[:, y] = 1
     return ret
 
 
 def to_variable(xs, volatile='off'):
-    return [chainer.Variable(x, volatile=volatile) for x in xs]
+    return [chainer.Variable(xp.asarray(x), volatile=volatile) for x in xs]
 
 
 labeled_loss = aggregator.Aggregator()
