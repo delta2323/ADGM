@@ -85,7 +85,7 @@ class ADGM(chainer.Chain):
 
     def classification_loss(self, x, y):
         y_pred = self.predict(x)
-        return F.softmax_cross_entropy(y_pred, y)
+        return F.softmax_cross_entropy(y_pred, y) * len(x.data)
 
     def accuracy(self, x, y):
         y_pred = self.predict(x)
