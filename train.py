@@ -26,6 +26,7 @@ parser.add_argument('--beta', default=1, type=float)
 parser.add_argument('--alpha', default=3e-4, type=float)
 parser.add_argument('--debug', action='store_true')
 parser.add_argument('--verbose', action='store_true')
+parser.add_argument('--pruning', action='store_true')
 args = parser.parse_args()
 
 if args.debug:
@@ -37,11 +38,8 @@ if args.gpu >= 0:
     cuda.cupy.random.seed(args.seed)
 
 
-D = 784
-T = 10
-
-
-x_labeled, y_labeled, x_test, y_test, x_unlabeled = data.load_mnist()
+(x_labeled, y_labeled, x_test, y_test,
+ x_unlabeled, D, T) = data.load_mnist(pruning=args.pruning)
 labeled_data = feeder.DataFeeder((x_labeled, y_labeled))
 test_data = feeder.DataFeeder((x_test, y_test))
 unlabeled_data = feeder.DataFeeder(x_unlabeled)

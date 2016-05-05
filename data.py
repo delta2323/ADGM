@@ -3,10 +3,18 @@ import six
 from sklearn.datasets import mldata
 
 
-def load_mnist(N_labeled=100, N_test=10000):
+def prune_by_stddev(x, threshold=0.1):
+    stddev = np.std(x, axis=0)
+    return x[:, stddev > threshold]
+
+def load_mnist(N_labeled=100, N_test=10000, pruning=False):
     data = mldata.fetch_mldata('MNIST original')
     x = data['data'].astype(np.float32) / 255
     y = data['target'].astype(np.int32)
+
+    if pruning:
+        x = prune_by_stddev(x)
+    D = len(x[0])
 
     T = 10
     N_labeled /= T
@@ -23,4 +31,4 @@ def load_mnist(N_labeled=100, N_test=10000):
     perm = np.random.permutation(N_rest)
     x_unlabeled, x_test = np.split(x_rest[perm], [N_rest - N_test])
     _, y_test = np.split(y_rest[perm], [N_rest - N_test])
-    return x_train, y_train, x_test, y_test, x_unlabeled
+    return x_train, y_train, x_test, y_test, x_unlabeled, D, T
