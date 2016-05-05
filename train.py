@@ -26,6 +26,7 @@ parser.add_argument('--beta', default=1, type=float)
 parser.add_argument('--alpha', default=3e-4, type=float)
 parser.add_argument('--debug', action='store_true')
 parser.add_argument('--verbose', action='store_true')
+parser.add_argument('--binarize', action='store_true')
 parser.add_argument('--pruning', action='store_true')
 args = parser.parse_args()
 
@@ -62,6 +63,11 @@ def to_variable(xs, volatile='off'):
     return [chainer.Variable(xp.asarray(x), volatile=volatile) for x in xs]
 
 
+def binarize(x):
+    rnd = np.random.uniform(size=x.shape)
+    return np.where(rnd < x, 1.0, 0.0).astype(np.float32)
+
+
 labeled_loss = aggregator.Aggregator()
 labeled_accuracy = aggregator.Aggregator()
 unlabeled_loss = aggregator.Aggregator()
@@ -69,6 +75,8 @@ for iteration in six.moves.range(args.iteration):
     # Supervised training
     model.train = True
     (x, y), _ = labeled_data.get_minibatch()
+    if args.binarize:
+        x = binarize(x)
     batchsize = len(x)
     xs = to_variable((x, y))
     optimizer.update(model, *xs)
@@ -88,6 +96,8 @@ for iteration in six.moves.range(args.iteration):
     # Unsupervised training
     model.train = True
     x, _ = unlabeled_data.get_minibatch()
+    if args.binarize:
+        x = binarize(x)
     batchsize = len(x)
     x, = to_variable((x,))
     optimizer.update(model, x)
@@ -108,6 +118,8 @@ for iteration in six.moves.range(args.iteration):
         test_data.reset()
         while not test_data.exhaust:
             (x, y), _ = test_data.get_minibatch()
+            if args.binarize:
+                x = binarize(x)
             batchsize = len(x)
             xs = to_variable((x, y), 'on')
 
