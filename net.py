@@ -18,7 +18,7 @@ def split(x):
 class ADGM(chainer.Chain):
 
     def __init__(self, x_dim, a_dim, y_dim, z_dim, h_dim,
-                 gamma, sampling_num=1):
+                 gamma, sampling_train=5, sampling_predict=10):
         q_a_given_x = MLP((x_dim, h_dim, h_dim, a_dim * 2))
         q_z_given_a_y_x = MultiMLP((a_dim, y_dim, x_dim),
                                    (h_dim, h_dim, z_dim * 2))
@@ -36,7 +36,8 @@ class ADGM(chainer.Chain):
         self.verbose = False
         # gamma corresponds to beta * (Nl + Nu) / Nl in the original paper.
         self.gamma = gamma
-        self.sampling_num = sampling_num
+        self.sampling_train = sampling_train
+        self.sampling_predict = sampling_predict
         self.y_dim = y_dim
 
     @property
@@ -71,11 +72,15 @@ class ADGM(chainer.Chain):
         return (nll_p_z + nll_p_x_given_z_y +
                 nll_p_a_given_z_y_x - nll_q_z_given_a_y_x)
 
-    def predict(self, x, softmax=False):
-        a_mean, _ = split(self.q_a_given_x(x))
-        y_pred = self.q_y_given_a_x(a_mean, x)
-        if softmax:
-            y_pred = F.softmax(y_pred)
+    def predict(self, x):
+        a_mean, a_ln_var = split(self.q_a_given_x(x))
+        y_pred = chainer.Variable(
+            self.xp.zeros((len(x.data), self.y_dim), dtype=np.float32),
+            volatile='auto')
+        for _ in six.moves.range(self.sampling_predict):
+            a = F.gaussian(a_mean, a_ln_var)
+            y_pred += F.softmax(self.q_y_given_a_x(a, x))
+        y_pred /= self.sampling_predict
         return y_pred
 
     def classification_loss(self, x, y):
@@ -113,9 +118,9 @@ class ADGM(chainer.Chain):
 
     def __call__(self, x, y=None):
         loss = 0.0
-        for _ in six.moves.range(self.sampling_num):
+        for _ in six.moves.range(self.sampling_train):
             loss += self.loss_one(x, y)
-        loss /= self.sampling_num
+        loss /= self.sampling_train
         self.loss = float(loss.data)
         return loss
 
