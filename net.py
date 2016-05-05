@@ -95,9 +95,8 @@ class ADGM(chainer.Chain):
         a_mean, a_ln_var = split(self.q_a_given_x(x))
         a = F.gaussian(a_mean, a_ln_var)
 
-        # nll_q_a_given_x
-        loss = -F.sum(l.gaussian_nll(a, a_mean, a_ln_var))
-        loss += np.log(self.y_dim)  # nll_p_given_y
+        loss = -F.sum(l.gaussian_nll(a, a_mean, a_ln_var))  # nll(q(a|x))
+        loss += np.log(self.y_dim)  # nll(p(y))
         if y is None:
             losses_z_dep = []
             for i in six.moves.range(self.y_dim):
@@ -108,12 +107,13 @@ class ADGM(chainer.Chain):
                 loss_z_dep = F.reshape(loss_z_dep, (-1, 1))
                 losses_z_dep.append(loss_z_dep)
             q_y_given_a_x = F.softmax(self.q_y_given_a_x(a, x))
-            loss -= entropy(q_y_given_a_x)  # nll_q_y_given_a_x
-            # nll_p_z + nll_p_x_given_z_y + nll_p_a_given_x_y_z - nll_q_z_given_a_y_x
+            loss -= entropy(q_y_given_a_x)  # nll(q(y|a,x))
+            # nll(p(z)) + nll(p(x|z, y)) + nll(p(a|x, y, z)) - nll(q(z|a, y, x))
             loss += F.sum(F.concat(losses_z_dep) * q_y_given_a_x)
         else:
+            # nll(p(z)) + nll(p(x|z, y)) + nll(p(a|x, y, z)) - nll(q(z|a, y, x))
             loss += F.sum(self.loss_z_dep(x, y, a))
-            loss += self.gamma * self.classification_loss(x, y)
+            loss += self.gamma * self.classification_loss(x, y)  # cls loss
         return loss
 
     def __call__(self, x, y=None):
