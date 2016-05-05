@@ -25,6 +25,7 @@ parser.add_argument('--h-dim', default=500, type=int)
 parser.add_argument('--beta', default=1, type=float)
 parser.add_argument('--alpha', default=3e-4, type=float)
 parser.add_argument('--debug', action='store_true')
+parser.add_argument('--verbose', action='store_true')
 args = parser.parse_args()
 
 if args.debug:
@@ -49,6 +50,7 @@ N_unlabeled = len(unlabeled_data)
 
 gamma = args.beta * float(N_labeled + N_unlabeled) / N_labeled
 model = net.ADGM(D, args.a_dim, T, args.z_dim, args.h_dim, gamma)
+model.verbose = args.verbose
 if args.gpu >= 0:
     model.to_gpu(args.gpu)
 xp = cuda.cupy if args.gpu >= 0 else np
