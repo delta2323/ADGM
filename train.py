@@ -64,6 +64,11 @@ def to_variable(xs, volatile='off'):
     return [chainer.Variable(xp.asarray(x), volatile=volatile) for x in xs]
 
 
+def binarize(x):
+    rnd = np.random.uniform(x.shape)
+    return np.where(rnd < x, 1.0, 0.0).astype(np.flaot32)
+
+
 labeled_loss = aggregator.Aggregator()
 labeled_accuracy = aggregator.Aggregator()
 unlabeled_loss = aggregator.Aggregator()
@@ -71,6 +76,7 @@ for iteration in six.moves.range(args.iteration):
     # Supervised training
     model.train = True
     (x, y), _ = labeled_data.get_minibatch()
+    x = binarize(x)
     batchsize = len(x)
     xs = to_variable((x, y))
     optimizer.update(model, *xs)
@@ -90,6 +96,7 @@ for iteration in six.moves.range(args.iteration):
     # Unsupervised training
     model.train = True
     x, _ = unlabeled_data.get_minibatch()
+    x = binarlize(x)
     batchsize = len(x)
     x, = to_variable((x,))
     optimizer.update(model, x)
@@ -110,6 +117,7 @@ for iteration in six.moves.range(args.iteration):
         test_data.reset()
         while not test_data.exhaust:
             (x, y), _ = test_data.get_minibatch()
+            x = binarize(x)
             batchsize = len(x)
             xs = to_variable((x, y), 'on')
 
